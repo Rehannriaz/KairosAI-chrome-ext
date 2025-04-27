@@ -41,6 +41,8 @@
     "@babel/preset-env": "^7.23.9",
     "@babel/preset-react": "^7.23.3",
     "@babel/preset-typescript": "^7.23.3",
+    "@types/chrome": "^0.0.317",
+    "@types/firefox-webext-browser": "^120.0.4",
     "@types/react": "^17.0.75",
     "@types/react-dom": "^17.0.25",
     "@types/webpack": "^5.28.5",

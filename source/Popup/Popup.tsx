@@ -1,7 +1,12 @@
 import * as React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import "./styles.scss";
 import Login from "./Login";
+import {
+  handleAutofill,
+  processAutofillContent,
+  applyAutofill,
+} from "./autofillService";
 
 // Resume type definition
 interface Resume {
@@ -66,15 +71,73 @@ const HomeView: React.FC = (): JSX.Element => {
 
   // Track the selected resume ID
   const [selectedResumeId, setSelectedResumeId] = useState<number | null>(1); // Default select the primary resume
-  // State for detail view
   // Active tab state
   const [activeTab, setActiveTab] = useState("autofill");
   // Dropdown state
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  // Resume section visibility
+  // Track loading state for autofill
+  const [isAutofilling, setIsAutofilling] = useState(false);
 
-  const handleAutofill = (): void => {
-    alert("Autofilling the current page...");
+  // Component mounted ref to prevent state updates after unmount
+  const isMounted = useRef(true);
+
+  // Clean up the ref when component unmounts
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  const onAutofillClick = async () => {
+    try {
+      setIsAutofilling(true);
+
+      // Get HTML content from active tab
+      const htmlContent = await handleAutofill(isMounted);
+      // console.log("html", htmlContent);
+      if (!isMounted.current) return;
+
+      if (htmlContent) {
+        // Process the HTML content for autofill
+        const formFields = processAutofillContent(htmlContent);
+        console.log(formFields);
+        const autofillData = {
+          'input[name="firstName"]': "John",
+          'input[name="lastName"]': "Doe",
+          'input[name="email"]': "john.doe@example.com",
+          'input[name="phone"]': "1234567890",
+          'input[name="streetAddress"]': "123 Main St",
+          'input[name="city"]': "New York",
+          'input[name="state"]': "NY",
+          'input[name="zip"]': "10001",
+          'input[name="desiredPay"]': "80000",
+          'input[name="websiteUrl"]': "https://johndoeportfolio.com",
+          'input[name="linkedinUrl"]': "https://linkedin.com/in/johndoe",
+          'input[name="educationInstitutionName"]': "Harvard University",
+          'input[name="customQuestions[913]"]': "3.8 GPA",
+          'input[name="customQuestions[1157]"]': "Current Company Inc.",
+          'input[name="customQuestions[2366]"]': "5 years",
+          'input[name="customQuestions[1156]"]': "$70,000",
+          'input[name="customQuestions[1259]"]': "Excited about the mission!",
+          'input[name="customQuestions[917]"]': "2025-08-01",
+          'input[name="customQuestions[1255]"]': "Single",
+          'input[name="customQuestions[1086]"]':
+            "Jane Smith, 9876543210, jane@example.com",
+          'select[name="countryId"]': "US", // Country selector
+          'select[name="educationLevelId"]': "Bachelors", // Education level selector
+          'input[id="FabricTextField-5"]':
+            "https://gosaas.bamboohr.com/careers/111", // (This already had a value)
+        };
+
+        await applyAutofill(isMounted, autofillData);
+      }
+    } catch (error) {
+      console.error("Autofill error:", error);
+    } finally {
+      if (isMounted.current) {
+        setIsAutofilling(false);
+      }
+    }
   };
 
   const handleSelectResume = (id: number): void => {
@@ -145,8 +208,12 @@ const HomeView: React.FC = (): JSX.Element => {
               </div>
               <h3>Autofill this job application!</h3>
             </div>
-            <button className="autofill-button" onClick={handleAutofill}>
-              <span className="lightning-icon">⚡</span> Autofill this page
+            <button
+              className="autofill-button"
+              onClick={onAutofillClick}
+              disabled={isAutofilling}>
+              <span className="lightning-icon">⚡</span>
+              {isAutofilling ? "Autofilling..." : "Autofill this page"}
             </button>
           </div>
 
