@@ -10,10 +10,43 @@ import {
 
 // Resume type definition
 interface Resume {
-  id: number;
+  id: string;
+  user_id: string;
   name: string;
-  lastUpdated: string;
-  isPrimary: boolean;
+  location: string;
+  email: string;
+  phone: string;
+  professional_summary: string;
+  skills: string[];
+  employment_history: {
+    company: string;
+    end_date: string;
+    job_title: string;
+    start_date: string;
+    description: string;
+    achievements: string[];
+  }[];
+  education: {
+    gpa: string | null;
+    degree: string;
+    honors: string[];
+    end_date: string;
+    start_date: string;
+    institution: string;
+  }[];
+  preferences: {
+    work_type: string | null;
+    desired_role: string | null;
+    available_from: string | null;
+    desired_salary: string | null;
+    desired_location: string | null;
+  };
+  link: string | null;
+  skill_level: string | null;
+  uploaddate: string;
+  file_url: string;
+  primary_resume_id: string;
+  isPrimary?: boolean;
 }
 
 // Main Popup component with authentication
@@ -41,36 +74,13 @@ const Popup: React.FC = (): JSX.Element => {
 
 // Home component with resume management
 const HomeView: React.FC = (): JSX.Element => {
-  // Static resume data
-  const [resumes, setResumes] = useState<Resume[]>([
-    {
-      id: 1,
-      name: "Software Engineer Resume",
-      lastUpdated: "2025-04-15",
-      isPrimary: true,
-    },
-    {
-      id: 2,
-      name: "Data Science Resume",
-      lastUpdated: "2025-04-10",
-      isPrimary: false,
-    },
-    {
-      id: 3,
-      name: "Project Manager Resume",
-      lastUpdated: "2025-03-30",
-      isPrimary: false,
-    },
-    {
-      id: 4,
-      name: "Frontend Developer Resume",
-      lastUpdated: "2025-03-22",
-      isPrimary: false,
-    },
-  ]);
+  // State for resumes fetched from API
+  const [resumes, setResumes] = useState<Resume[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Track the selected resume ID
-  const [selectedResumeId, setSelectedResumeId] = useState<number | null>(1); // Default select the primary resume
+  const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
   // Active tab state
   const [activeTab, setActiveTab] = useState("autofill");
   // Dropdown state
@@ -88,51 +98,150 @@ const HomeView: React.FC = (): JSX.Element => {
     };
   }, []);
 
+  // Fetch resumes from API on component mount
+  useEffect(() => {
+    const fetchResumes = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        chrome.storage.local.get("token", async (result) => {
+          const token = result.token;
+          console.log("Fetched token from storage:", token);
+
+          if (!token) {
+            throw new Error("No authentication token found");
+          }
+
+          const response = await fetch(
+            "https://kairos-ai-arthur.vercel.app/api/resumes",
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error(`Failed to fetch resumes: ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          const processedResumes = data.map((resume: Resume) => ({
+            ...resume,
+            isPrimary: resume.id === resume.primary_resume_id,
+          }));
+
+          setResumes(processedResumes);
+
+          const primaryResume = processedResumes.find((r) => r.isPrimary);
+          if (primaryResume) {
+            setSelectedResumeId(primaryResume.id);
+          } else if (processedResumes.length > 0) {
+            setSelectedResumeId(processedResumes[0].id);
+          }
+        });
+      } catch (err) {
+        console.error("Error fetching resumes:", err);
+        setError(err instanceof Error ? err.message : "Failed to load resumes");
+      } finally {
+        if (isMounted.current) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchResumes();
+  }, []);
+
   const onAutofillClick = async () => {
     try {
       setIsAutofilling(true);
 
       // Get HTML content from active tab
       const htmlContent = await handleAutofill(isMounted);
-      // console.log("html", htmlContent);
       if (!isMounted.current) return;
 
       if (htmlContent) {
+        // Find the selected resume to use for autofill
+        const selectedResume = resumes.find(
+          (resume) => resume.id === selectedResumeId
+        );
+
+        if (!selectedResume) {
+          throw new Error("No resume selected for autofill");
+        }
+
         // Process the HTML content for autofill
         const formFields = processAutofillContent(htmlContent);
         console.log(formFields);
+
+        // Create autofill data from the selected resume
         const autofillData = {
-          'input[name="firstName"]': "John",
-          'input[name="lastName"]': "Doe",
-          'input[name="email"]': "john.doe@example.com",
-          'input[name="phone"]': "1234567890",
-          'input[name="streetAddress"]': "123 Main St",
-          'input[name="city"]': "New York",
-          'input[name="state"]': "NY",
-          'input[name="zip"]': "10001",
-          'input[name="desiredPay"]': "80000",
-          'input[name="websiteUrl"]': "https://johndoeportfolio.com",
-          'input[name="linkedinUrl"]': "https://linkedin.com/in/johndoe",
-          'input[name="educationInstitutionName"]': "Harvard University",
-          'input[name="customQuestions[913]"]': "3.8 GPA",
-          'input[name="customQuestions[1157]"]': "Current Company Inc.",
-          'input[name="customQuestions[2366]"]': "5 years",
-          'input[name="customQuestions[1156]"]': "$70,000",
-          'input[name="customQuestions[1259]"]': "Excited about the mission!",
-          'input[name="customQuestions[917]"]': "2025-08-01",
-          'input[name="customQuestions[1255]"]': "Single",
-          'input[name="customQuestions[1086]"]':
-            "Jane Smith, 9876543210, jane@example.com",
-          'select[name="countryId"]': "US", // Country selector
-          'select[name="educationLevelId"]': "Bachelors", // Education level selector
-          'input[id="FabricTextField-5"]':
-            "https://gosaas.bamboohr.com/careers/111", // (This already had a value)
+          'input[name="firstName"]': selectedResume.name.split(" ")[0],
+          'input[name="lastName"]': selectedResume.name
+            .split(" ")
+            .slice(1)
+            .join(" "),
+          'input[name="email"]': selectedResume.email,
+          'input[name="phone"]': selectedResume.phone,
+          'input[name="streetAddress"]': selectedResume.location
+            .split(",")[0]
+            .trim(),
+          'input[name="city"]':
+            selectedResume.location.split(",")[1]?.trim() || "",
+          'input[name="websiteUrl"]': selectedResume.link || "",
+          'input[name="linkedinUrl"]': "", // Not available in the resume data
         };
+
+        // Add education information if available
+        if (selectedResume.education && selectedResume.education.length > 0) {
+          autofillData['input[name="educationInstitutionName"]'] =
+            selectedResume.education[0].institution;
+
+          // Add GPA if available
+          if (selectedResume.education[0].gpa) {
+            autofillData['input[name="customQuestions[2043]"]'] =
+              selectedResume.education[0].gpa;
+          }
+        }
+
+        // Add work experience duration if available
+        if (
+          selectedResume.employment_history &&
+          selectedResume.employment_history.length > 0
+        ) {
+          // Calculate experience based on earliest start date
+          const startDates = selectedResume.employment_history
+            .map((job) => new Date(job.start_date).getTime())
+            .filter((time) => !isNaN(time));
+
+          if (startDates.length > 0) {
+            const earliestStart = new Date(Math.min(...startDates));
+            const now = new Date();
+            const years = now.getFullYear() - earliestStart.getFullYear();
+            autofillData['input[name="customQuestions[2047]"]'] =
+              `${years} years`;
+          }
+        }
+
+        // Add desired salary if available
+        if (selectedResume.preferences.desired_salary) {
+          autofillData['input[name="desiredPay"]'] =
+            selectedResume.preferences.desired_salary;
+          autofillData['input[name="customQuestions[1156]"]'] =
+            selectedResume.preferences.desired_salary;
+        }
 
         await applyAutofill(isMounted, autofillData);
       }
     } catch (error) {
       console.error("Autofill error:", error);
+      alert(
+        `Autofill failed: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     } finally {
       if (isMounted.current) {
         setIsAutofilling(false);
@@ -140,7 +249,7 @@ const HomeView: React.FC = (): JSX.Element => {
     }
   };
 
-  const handleSelectResume = (id: number): void => {
+  const handleSelectResume = (id: string): void => {
     setSelectedResumeId(id);
     setDropdownOpen(false);
   };
@@ -158,11 +267,30 @@ const HomeView: React.FC = (): JSX.Element => {
     window.close();
   };
 
-  const handleViewResume = (): void => {};
+  const handleViewResume = (): void => {
+    const selectedResume = resumes.find(
+      (resume) => resume.id === selectedResumeId
+    );
+    if (selectedResume && selectedResume.file_url) {
+      window.open(selectedResume.file_url, "_blank");
+    } else {
+      alert("No resume file available to view.");
+    }
+  };
 
   const selectedResume = resumes.find(
     (resume) => resume.id === selectedResumeId
   );
+
+  // Format date function for displaying last updated
+  const formatDate = (dateString: string): string => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
 
   return (
     <div className="simplify-app">
@@ -211,7 +339,7 @@ const HomeView: React.FC = (): JSX.Element => {
             <button
               className="autofill-button"
               onClick={onAutofillClick}
-              disabled={isAutofilling}>
+              disabled={isAutofilling || isLoading || !selectedResumeId}>
               <span className="lightning-icon">⚡</span>
               {isAutofilling ? "Autofilling..." : "Autofill this page"}
             </button>
@@ -222,55 +350,85 @@ const HomeView: React.FC = (): JSX.Element => {
               <h3>Resume</h3>
             </div>
 
-            <>
-              <div className="resume-selector">
-                <div className="selected-resume" onClick={toggleDropdown}>
-                  <span>{selectedResume?.name || "Select a resume"}</span>
-                  <span className="dropdown-arrow">
-                    {dropdownOpen ? "▲" : "▼"}
-                  </span>
-                </div>
-                <button className="view-button" onClick={handleViewResume}>
-                  <span className="eye-icon">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="grey"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  </span>
+            {isLoading ? (
+              <div className="loading-state">Loading your resumes...</div>
+            ) : error ? (
+              <div className="error-state">
+                <p>Error: {error}</p>
+                <button
+                  className="retry-button"
+                  onClick={() => window.location.reload()}>
+                  Retry
                 </button>
               </div>
-
-              {dropdownOpen && (
-                <div className="resume-dropdown">
-                  {resumes.map((resume) => (
-                    <div
-                      key={resume.id}
-                      className={`resume-option ${selectedResumeId === resume.id ? "selected" : ""}`}
-                      onClick={() => handleSelectResume(resume.id)}>
-                      {resume.name}
-                      {resume.isPrimary && (
-                        <span className="primary-badge">Primary</span>
-                      )}
-                    </div>
-                  ))}
+            ) : (
+              <>
+                <div className="resume-selector">
+                  <div className="selected-resume" onClick={toggleDropdown}>
+                    <span>{selectedResume?.name || "Select a resume"}</span>
+                    <span className="dropdown-arrow">
+                      {dropdownOpen ? "▲" : "▼"}
+                    </span>
+                  </div>
+                  <button
+                    className="view-button"
+                    onClick={handleViewResume}
+                    disabled={!selectedResume?.file_url}>
+                    <span className="eye-icon">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="grey"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </span>
+                  </button>
                 </div>
-              )}
 
-              <div className="tailor-resume-section">
-                <button className="tailor-button" onClick={handleTailorResume}>
-                  <span className="tailor-icon">✏️</span> Tailor Resume
-                </button>
-              </div>
-            </>
+                {dropdownOpen && (
+                  <div className="resume-dropdown">
+                    {resumes.length > 0 ? (
+                      resumes.map((resume) => (
+                        <div
+                          key={resume.id}
+                          className={`resume-option ${selectedResumeId === resume.id ? "selected" : ""}`}
+                          onClick={() => handleSelectResume(resume.id)}>
+                          <div className="resume-option-name">
+                            {resume.name}
+                          </div>
+                          <div className="resume-option-details">
+                            <span className="resume-updated">
+                              Updated: {formatDate(resume.uploaddate)}
+                            </span>
+                            {resume.isPrimary && (
+                              <span className="primary-badge">Primary</span>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="no-resumes">No resumes found</div>
+                    )}
+                  </div>
+                )}
+
+                <div className="tailor-resume-section">
+                  <button
+                    className="tailor-button"
+                    onClick={handleTailorResume}
+                    disabled={!selectedResumeId}>
+                    <span className="tailor-icon">✏️</span> Tailor Resume
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </>
       )}

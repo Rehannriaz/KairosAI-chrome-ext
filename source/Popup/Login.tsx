@@ -19,16 +19,19 @@ const Login: React.FC<LoginProps> = ({ onSuccessfulAuth }) => {
     setMessage("");
 
     try {
-      const res = await fetch("https://kairos-ai-auth.vercel.app/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
+      const res = await fetch(
+        "https://kairos-ai-auth-2.vercel.app/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
+        }
+      );
       const data = await res.json();
       console.log("data", data);
       console.log("res", res);
@@ -36,6 +39,9 @@ const Login: React.FC<LoginProps> = ({ onSuccessfulAuth }) => {
         setMessage("Logged in successfully!");
         // Pass the user info to parent component
         localStorage.setItem("kairosai_authenticated", "true");
+        chrome.storage.local.set({ token: data.token }, function () {
+          console.log("Token saved to Chrome storage");
+        });
         onSuccessfulAuth(data.user.name || "", data.user.email);
       } else {
         setMessage(data.message || "Login failed.");
@@ -136,13 +142,24 @@ const Login: React.FC<LoginProps> = ({ onSuccessfulAuth }) => {
 
           <div className="login-footer">
             <a
-              href="https://kairos-ai-two.vercel.app/login"
-              className="forgot-password">
+              href="#"
+              className="forgot-password"
+              onClick={(e) => {
+                e.preventDefault();
+                window.open("https://kairos-ai-two.vercel.app/login", "_blank");
+              }}>
               Forgot password?
             </a>
             <a
-              href="https://kairos-ai-two.vercel.app/signup"
-              className="create-account">
+              href="#"
+              className="create-account"
+              onClick={(e) => {
+                e.preventDefault();
+                window.open(
+                  "https://kairos-ai-two.vercel.app/signup",
+                  "_blank"
+                );
+              }}>
               Create an account
             </a>
           </div>
