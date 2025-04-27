@@ -1,7 +1,7 @@
-/* eslint-disable no-nested-ternary */
 import * as React from "react";
 import { useState, useEffect } from "react";
 import "./styles.scss";
+import Login from "./Login";
 
 // Resume type definition
 interface Resume {
@@ -11,11 +11,32 @@ interface Resume {
   isPrimary: boolean;
 }
 
+// Main Popup component with authentication
+const Popup: React.FC = (): JSX.Element => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const authStatus = localStorage.getItem("kairosai_authenticated");
+    if (authStatus === "true") {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+  };
+
+  return isAuthenticated ? (
+    <HomeView />
+  ) : (
+    <Login onSuccessfulAuth={handleLoginSuccess} />
+  );
+};
+
 // Home component with resume management
-const HomeView: React.FC<{
-  onBackToWelcome: () => void;
-}> = ({ onBackToWelcome }): JSX.Element => {
-  // Static resume data for demonstration
+const HomeView: React.FC = (): JSX.Element => {
+  // Static resume data
   const [resumes, setResumes] = useState<Resume[]>([
     {
       id: 1,
@@ -44,356 +65,166 @@ const HomeView: React.FC<{
   ]);
 
   // Track the selected resume ID
-  const [selectedResumeId, setSelectedResumeId] = useState<number | null>(null);
+  const [selectedResumeId, setSelectedResumeId] = useState<number | null>(1); // Default select the primary resume
   // State for detail view
-  const [showDetailView, setShowDetailView] = useState(false);
+  // Active tab state
+  const [activeTab, setActiveTab] = useState("autofill");
+  // Dropdown state
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  // Resume section visibility
 
-  const handleSetPrimary = (id: number): void => {
-    setResumes((prevResumes) =>
-      prevResumes.map((resume) => ({
-        ...resume,
-        isPrimary: resume.id === id,
-      }))
-    );
+  const handleAutofill = (): void => {
+    alert("Autofilling the current page...");
   };
 
   const handleSelectResume = (id: number): void => {
-    setSelectedResumeId(id === selectedResumeId ? null : id);
+    setSelectedResumeId(id);
+    setDropdownOpen(false);
   };
+
+  const handleTailorResume = (): void => {
+    alert("Opening resume editor to tailor your resume...");
+  };
+
+  const toggleDropdown = (): void => {
+    setDropdownOpen(!dropdownOpen);
+  };
+
+  const handleClose = (): void => {
+    // Close the extension popup
+    window.close();
+  };
+
+  const handleViewResume = (): void => {};
 
   const selectedResume = resumes.find(
     (resume) => resume.id === selectedResumeId
   );
-  if (showDetailView && selectedResume) {
-    return (
-      <div className="resume-detail-view">
-        <div className="detail-header">
-          <button
-            type="button"
-            className="back-button"
-            onClick={() => setShowDetailView(false)}
-          >
-            ← Back to Resumes
+
+  return (
+    <div className="simplify-app">
+      <div className="app-header">
+        <h2>
+          <span className="logo">
+            <div className="logo-placeholder">
+              <img
+                src="../assets/logo_black.png"
+                alt="KairosAI Logo"
+                className="logo-image"
+              />
+            </div>
+            KairosAI
+          </span>
+        </h2>
+        <div className="header-icons">
+          <button className="icon-button close" onClick={handleClose}>
+            <span>✕</span>
           </button>
-          <h3>{selectedResume.name}</h3>
         </div>
+      </div>
 
-        <div className="resume-details">
-          <p>
-            <strong>Resume ID:</strong> {selectedResume.id}
-          </p>
-          <p>
-            <strong>Last Updated:</strong> {selectedResume.lastUpdated}
-          </p>
-          <p>
-            <strong>Status:</strong>{" "}
-            {selectedResume.isPrimary ? "Primary" : "Secondary"}
-          </p>
+      <div className="tab-navigation">
+        <button
+          className={`tab-button ${activeTab === "autofill" ? "active" : ""}`}
+          onClick={() => setActiveTab("autofill")}>
+          <span className="icon">✏️</span> Autofill
+        </button>
+        <button
+          className={`tab-button ${activeTab === "profile" ? "active" : ""}`}
+          onClick={() => setActiveTab("profile")}>
+          <span className="icon">👤</span> Profile
+        </button>
+      </div>
 
-          <div className="resume-content">
-            <h4>Resume Content</h4>
-            <p>
-              This is a placeholder for the actual resume content. In a real
-              implementation, this would display the parsed or formatted resume
-              data.
-            </p>
+      {activeTab === "autofill" && (
+        <>
+          <div className="autofill-card">
+            <div className="autofill-header">
+              <div className="icon-container">
+                <span className="lightning-icon">⚡</span>
+              </div>
+              <h3>Autofill this job application!</h3>
+            </div>
+            <button className="autofill-button" onClick={handleAutofill}>
+              <span className="lightning-icon">⚡</span> Autofill this page
+            </button>
+          </div>
 
-            <div className="content-sections">
-              <div className="section">
-                <h5>Professional Experience</h5>
-                <p>Sample experience details would appear here...</p>
+          <div className="resume-section">
+            <div className="section-header">
+              <h3>Resume</h3>
+            </div>
+
+            <>
+              <div className="resume-selector">
+                <div className="selected-resume" onClick={toggleDropdown}>
+                  <span>{selectedResume?.name || "Select a resume"}</span>
+                  <span className="dropdown-arrow">
+                    {dropdownOpen ? "▲" : "▼"}
+                  </span>
+                </div>
+                <button className="view-button" onClick={handleViewResume}>
+                  <span className="eye-icon">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="grey"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  </span>
+                </button>
               </div>
 
-              <div className="section">
-                <h5>Education</h5>
-                <p>Sample education details would appear here...</p>
-              </div>
+              {dropdownOpen && (
+                <div className="resume-dropdown">
+                  {resumes.map((resume) => (
+                    <div
+                      key={resume.id}
+                      className={`resume-option ${selectedResumeId === resume.id ? "selected" : ""}`}
+                      onClick={() => handleSelectResume(resume.id)}>
+                      {resume.name}
+                      {resume.isPrimary && (
+                        <span className="primary-badge">Primary</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
-              <div className="section">
-                <h5>Skills</h5>
-                <p>Sample skills would be listed here...</p>
+              <div className="tailor-resume-section">
+                <button className="tailor-button" onClick={handleTailorResume}>
+                  <span className="tailor-icon">✏️</span> Tailor Resume
+                </button>
               </div>
+            </>
+          </div>
+        </>
+      )}
+
+      {activeTab === "profile" && (
+        <div className="profile-tab">
+          <h3>Profile Settings</h3>
+          <p>User profile information and settings would appear here.</p>
+          <div className="profile-content">
+            <div className="profile-section">
+              <h4>Personal Information</h4>
+              <p>Name, email, and contact details would appear here.</p>
+            </div>
+            <div className="profile-section">
+              <h4>Preferences</h4>
+              <p>User preferences and settings would appear here.</p>
             </div>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="home-view">
-      <div className="home-header">
-        <button type="button" className="back-button" onClick={onBackToWelcome}>
-          ← Back
-        </button>
-        <h3>Your Resumes</h3>
-      </div>
-
-      <div className="table-container">
-        <table className="resumes-table">
-          <thead>
-            <tr>
-              <th>Resume Name</th>
-              <th>Last Updated</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {resumes.map((resume) => (
-              <tr
-                key={resume.id}
-                className={`${resume.isPrimary ? "primary-row" : ""} ${
-                  selectedResumeId === resume.id ? "selected-row" : ""
-                }`}
-                onClick={() => handleSelectResume(resume.id)}
-              >
-                <td>{resume.name}</td>
-                <td>{resume.lastUpdated}</td>
-                <td>
-                  {resume.isPrimary ? (
-                    <span className="primary-badge">Primary</span>
-                  ) : (
-                    <span className="secondary-badge">Secondary</span>
-                  )}
-                </td>
-                <td>
-                  {!resume.isPrimary && (
-                    <button
-                      type="button"
-                      className="set-primary-button"
-                      onClick={() => handleSetPrimary(resume.id)}
-                    >
-                      Set as Primary
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {selectedResumeId && (
-        <div className="resume-action-buttons">
-          <button
-            type="button"
-            className="next-button"
-            onClick={() => setShowDetailView(true)}
-          >
-            View Resume Details →
-          </button>
-        </div>
       )}
     </div>
-  );
-};
-
-// Welcome component to show after successful login
-const WelcomeView: React.FC<{
-  userName: string;
-  email: string;
-  onLogout: () => void;
-  onNavigateToHome: () => void;
-}> = ({ userName, email, onLogout, onNavigateToHome }): JSX.Element => {
-  return (
-    <div className="welcome-view">
-      <div className="welcome-header">
-        <button type="button" className="nav-button" onClick={onNavigateToHome}>
-          My Resumes
-        </button>
-      </div>
-
-      <h3>Welcome, {userName || email}!</h3>
-      <p>You have successfully logged in.</p>
-      <p>Your account information:</p>
-      <ul className="account-info">
-        <li>
-          <strong>Name:</strong> {userName || "Not provided"}
-        </li>
-        <li>
-          <strong>Email:</strong> {email}
-        </li>
-      </ul>
-      <button type="button" className="logout-button" onClick={onLogout}>
-        Log Out
-      </button>
-    </div>
-  );
-};
-
-// Auth component for login and signup
-const AuthForm: React.FC<{
-  onSuccessfulAuth: (name: string, email: string) => void;
-}> = ({ onSuccessfulAuth }): JSX.Element => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [message, setMessage] = useState("");
-  const [isLogin, setIsLogin] = useState(true);
-
-  const handleLogin = async (): Promise<void> => {
-    try {
-      const res = await fetch("http://localhost:5005/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setMessage("Logged in successfully!");
-        // Pass the user info to parent component
-        onSuccessfulAuth(data.user.name || "", data.user.email);
-      } else {
-        setMessage(data.message || "Login failed.");
-      }
-    } catch {
-      setMessage("Error connecting to server.");
-    }
-  };
-
-  const handleSignUp = async (): Promise<void> => {
-    try {
-      const res = await fetch("http://localhost:5005/auth/signup", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-          name,
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setMessage("Sign-up successful! Please log in.");
-        setIsLogin(true); // Switch to login after sign up
-      } else {
-        setMessage(data.message || "Sign-up failed.");
-      }
-    } catch {
-      setMessage("Error connecting to server.");
-    }
-  };
-
-  return (
-    <>
-      <p className="subtitle">{isLogin ? "Log In" : "Sign Up"}</p>
-
-      {!isLogin && (
-        <input
-          type="text"
-          placeholder="Name"
-          value={name}
-          onChange={(e): void => setName(e.target.value)}
-          className="input"
-        />
-      )}
-
-      <input
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(e): void => setEmail(e.target.value)}
-        className="input"
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e): void => setPassword(e.target.value)}
-        className="input"
-      />
-
-      <button
-        type="button"
-        className="login__button"
-        onClick={isLogin ? handleLogin : handleSignUp}
-      >
-        {isLogin ? "Log In" : "Sign Up"}
-      </button>
-
-      {message && <p className="message">{message}</p>}
-
-      <button
-        type="button"
-        className="link__button"
-        onClick={(): void => setIsLogin(!isLogin)}
-      >
-        {isLogin
-          ? "Don't have an account? Sign Up"
-          : "Already have an account? Log In"}
-      </button>
-    </>
-  );
-};
-
-const Popup: React.FC = (): JSX.Element => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userName, setUserName] = useState("");
-  const [userEmail, setUserEmail] = useState("");
-  const [currentView, setCurrentView] = useState<"welcome" | "home">("welcome");
-
-  // Check if user is already logged in on component mount
-  useEffect(() => {
-    const authData = localStorage.getItem("kairosAuthData");
-    if (authData) {
-      try {
-        const { name, email } = JSON.parse(authData);
-        setUserName(name);
-        setUserEmail(email);
-        setIsAuthenticated(true);
-      } catch (error) {
-        console.error("Failed to parse auth data:", error);
-      }
-    }
-  }, []);
-
-  const handleSuccessfulAuth = (name: string, email: string): void => {
-    setUserName(name);
-    setUserEmail(email);
-    setIsAuthenticated(true);
-
-    // Store auth data in local storage
-    localStorage.setItem("kairosAuthData", JSON.stringify({ name, email }));
-  };
-
-  const handleLogout = (): void => {
-    setIsAuthenticated(false);
-    setUserName("");
-    setUserEmail("");
-    setCurrentView("welcome");
-    localStorage.removeItem("kairosAuthData");
-  };
-
-  return (
-    <section id="popup">
-      <h2>
-        Kairos<span>AI</span>
-      </h2>
-
-      {isAuthenticated ? (
-        currentView === "welcome" ? (
-          <WelcomeView
-            userName={userName}
-            email={userEmail}
-            onLogout={handleLogout}
-            onNavigateToHome={() => setCurrentView("home")}
-          />
-        ) : (
-          <HomeView onBackToWelcome={() => setCurrentView("welcome")} />
-        )
-      ) : (
-        <AuthForm onSuccessfulAuth={handleSuccessfulAuth} />
-      )}
-    </section>
   );
 };
 
