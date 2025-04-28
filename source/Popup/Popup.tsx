@@ -7,7 +7,7 @@ import {
   processAutofillContent,
   applyAutofill,
 } from "./autofillService";
-
+import CONFIG from "../../Config";
 // Resume type definition
 interface Resume {
   id: string;
@@ -173,68 +173,68 @@ const HomeView: React.FC = (): JSX.Element => {
         if (!selectedResume) {
           throw new Error("No resume selected for autofill");
         }
-
-        // Process the HTML content for autofill
+        // Process the HTML content to extract form fields
         const formFields = processAutofillContent(htmlContent);
-        console.log(formFields);
 
-        // Create autofill data from the selected resume
-        const autofillData = {
-          'input[name="firstName"]': selectedResume.name.split(" ")[0],
-          'input[name="lastName"]': selectedResume.name
-            .split(" ")
-            .slice(1)
-            .join(" "),
-          'input[name="email"]': selectedResume.email,
-          'input[name="phone"]': selectedResume.phone,
-          'input[name="streetAddress"]': selectedResume.location
-            .split(",")[0]
-            .trim(),
-          'input[name="city"]':
-            selectedResume.location.split(",")[1]?.trim() || "",
-          'input[name="websiteUrl"]': selectedResume.link || "",
-          'input[name="linkedinUrl"]': "", // Not available in the resume data
-        };
+        console.log("Detected form fields:", formFields);
 
-        // Add education information if available
-        if (selectedResume.education && selectedResume.education.length > 0) {
-          autofillData['input[name="educationInstitutionName"]'] =
-            selectedResume.education[0].institution;
-
-          // Add GPA if available
-          if (selectedResume.education[0].gpa) {
-            autofillData['input[name="customQuestions[2043]"]'] =
-              selectedResume.education[0].gpa;
-          }
-        }
-
-        // Add work experience duration if available
+        // Add check for no fields BEFORE making the API call
         if (
-          selectedResume.employment_history &&
-          selectedResume.employment_history.length > 0
+          formFields.inputs.length === 0 &&
+          formFields.selects.length === 0 &&
+          formFields.textareas.length === 0
         ) {
-          // Calculate experience based on earliest start date
-          const startDates = selectedResume.employment_history
-            .map((job) => new Date(job.start_date).getTime())
-            .filter((time) => !isNaN(time));
+          alert("No Fields to AutoFill.");
+          setIsAutofilling(false);
+          return;
+        }
 
-          if (startDates.length > 0) {
-            const earliestStart = new Date(Math.min(...startDates));
-            const now = new Date();
-            const years = now.getFullYear() - earliestStart.getFullYear();
-            autofillData['input[name="customQuestions[2047]"]'] =
-              `${years} years`;
+        // Prepare the API request to GPT-3.5 Turbo
+        const response = await fetch(
+          "https://api.openai.com/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${CONFIG.OPENAI_API_KEY}`, // Use the config here
+            },
+            body: JSON.stringify({
+              model: "gpt-3.5-turbo",
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "You are an AI assistant that maps resume data to form fields on job application websites. Return only a JSON object with form field selectors as keys and corresponding values from the resume data.",
+                },
+                {
+                  role: "user",
+                  content: `Map this resume data to the form fields. 
+                Resume: ${JSON.stringify(selectedResume)}
+                Form fields: ${JSON.stringify(formFields)}
+                
+                Return a JSON object where keys are the form field selectors and values are the appropriate data from the resume.
+                For example: {"input[name='firstName']": "John", "input[name='email']": "john@example.com"}
+                
+                Be smart about mapping fields - look for patterns in field names and labels to determine what information should go where.
+                If you're unsure about a field, it's better to leave it blank than guess incorrectly.`,
+                },
+              ],
+              temperature: 0.3,
+              max_tokens: 2000,
+            }),
           }
+        );
+
+        if (!response.ok) {
+          throw new Error(`API request failed with status ${response.status}`);
         }
 
-        // Add desired salary if available
-        if (selectedResume.preferences.desired_salary) {
-          autofillData['input[name="desiredPay"]'] =
-            selectedResume.preferences.desired_salary;
-          autofillData['input[name="customQuestions[1156]"]'] =
-            selectedResume.preferences.desired_salary;
-        }
+        const data = await response.json();
+        const autofillData = JSON.parse(data.choices[0].message.content.trim());
 
+        console.log("AI-generated autofill data:", autofillData);
+
+        // Apply the autofill data
         await applyAutofill(isMounted, autofillData);
       }
     } catch (error) {

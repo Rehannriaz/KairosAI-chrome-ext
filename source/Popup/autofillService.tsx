@@ -429,16 +429,49 @@ export const applyAutofill = async (
             return;
           }
 
-          // Create a string representation of the autofill function
+          // Updated autofill function to handle special selectors
           const autofillFunctionStr = `
             (function(data) {
               Object.entries(data).forEach(([selector, value]) => {
-                const element = document.querySelector(selector);
+                let element;
+                
+                // Special handling for selectors with brackets
+                if (selector.includes('[') && selector.includes(']')) {
+                  // Handle custom questions with bracket notation in ID
+                  if (selector.startsWith('#customQuestions')) {
+                    const customId = selector.replace('#', '');
+                    element = document.getElementById(customId);
+                  } 
+                  // Handle other attribute selectors
+                  else {
+                    element = document.querySelector(selector);
+                  }
+                } else {
+                  element = document.querySelector(selector);
+                }
+                
                 if (element) {
+                  // Set the value
                   element.value = value;
-                  // Trigger change event
-                  const event = new Event('input', { bubbles: true });
-                  element.dispatchEvent(event);
+                  
+                  // Trigger events for proper form handling
+                  const inputEvent = new Event('input', { bubbles: true });
+                  element.dispatchEvent(inputEvent);
+                  
+                  const changeEvent = new Event('change', { bubbles: true });
+                  element.dispatchEvent(changeEvent);
+                  
+                  // If it's a select element, make sure the option is selected
+                  if (element.tagName === 'SELECT') {
+                    for (let i = 0; i < element.options.length; i++) {
+                      if (element.options[i].value === value) {
+                        element.options[i].selected = true;
+                        break;
+                      }
+                    }
+                  }
+                } else {
+                  console.warn("Element not found for selector:", selector);
                 }
               });
               return true;
@@ -450,17 +483,89 @@ export const applyAutofill = async (
             chrome.scripting.executeScript(
               {
                 target: { tabId: activeTab.id },
-                function: function (data) {
+                func: function (data) {
+                  const results = {
+                    success: [],
+                    failed: [],
+                  };
+
                   Object.entries(data).forEach(([selector, value]) => {
-                    const element = document.querySelector(selector);
+                    let element;
+
+                    // Special handling for selectors with brackets
+                    if (selector.includes("[") && selector.includes("]")) {
+                      // Handle custom questions with bracket notation in ID
+                      if (selector.startsWith("#customQuestions")) {
+                        const customId = selector.replace("#", "");
+                        element = document.getElementById(customId);
+                      }
+                      // Handle other attribute selectors
+                      else {
+                        element = document.querySelector(selector);
+                      }
+                    } else {
+                      element = document.querySelector(selector);
+                    }
+
                     if (element) {
+                      // Set the value
                       element.value = value;
-                      // Trigger change event
-                      const event = new Event("input", { bubbles: true });
-                      element.dispatchEvent(event);
+
+                      // Trigger events for proper form handling
+                      const inputEvent = new Event("input", { bubbles: true });
+                      element.dispatchEvent(inputEvent);
+
+                      const changeEvent = new Event("change", {
+                        bubbles: true,
+                      });
+                      element.dispatchEvent(changeEvent);
+
+                      // If it's a select element, make sure the option is selected
+                      if (element.tagName === "SELECT") {
+                        for (let i = 0; i < element.options.length; i++) {
+                          if (element.options[i].value === value) {
+                            element.options[i].selected = true;
+                            break;
+                          }
+                        }
+                      }
+
+                      results.success.push(selector);
+                    } else {
+                      // Try with a different approach for IDs with special characters
+                      if (selector.startsWith("#")) {
+                        const id = selector.substring(1);
+                        // Try to escape special characters in ID
+                        try {
+                          element = document.querySelector(`[id="${id}"]`);
+                          if (element) {
+                            element.value = value;
+                            const inputEvent = new Event("input", {
+                              bubbles: true,
+                            });
+                            element.dispatchEvent(inputEvent);
+                            const changeEvent = new Event("change", {
+                              bubbles: true,
+                            });
+                            element.dispatchEvent(changeEvent);
+                            results.success.push(selector);
+                            return;
+                          }
+                        } catch (e) {
+                          console.error(
+                            "Error with alternate selector method:",
+                            e
+                          );
+                        }
+                      }
+
+                      results.failed.push(selector);
+                      console.warn("Element not found for selector:", selector);
                     }
                   });
-                  return true;
+
+                  console.log("Autofill results:", results);
+                  return results;
                 },
                 args: [autofillData],
               },
@@ -479,7 +584,7 @@ export const applyAutofill = async (
                   return;
                 }
 
-                console.log("Autofill applied successfully");
+                console.log("Autofill applied successfully", results);
                 resolve(true);
               }
             );
@@ -526,19 +631,67 @@ export const applyAutofill = async (
           return false;
         }
 
-        // Create a string representation of the autofill function
+        // Updated autofill function to handle special selectors
         const autofillFunctionStr = `
-          (function(data) {
-            Object.entries(${JSON.stringify(autofillData)}).forEach(([selector, value]) => {
-              const element = document.querySelector(selector);
+          (function() {
+            const data = ${JSON.stringify(autofillData)};
+            const results = {
+              success: [],
+              failed: []
+            };
+            
+            Object.entries(data).forEach(([selector, value]) => {
+              let element;
+              
+              // Special handling for selectors with brackets
+              if (selector.includes('[') && selector.includes(']')) {
+                // Handle custom questions with bracket notation in ID
+                if (selector.startsWith('#customQuestions')) {
+                  const customId = selector.replace('#', '');
+                  element = document.getElementById(customId);
+                } 
+                // Handle other attribute selectors
+                else {
+                  element = document.querySelector(selector);
+                }
+              } else {
+                element = document.querySelector(selector);
+              }
+              
               if (element) {
                 element.value = value;
-                // Trigger change event
-                const event = new Event('input', { bubbles: true });
-                element.dispatchEvent(event);
+                const inputEvent = new Event('input', { bubbles: true });
+                element.dispatchEvent(inputEvent);
+                const changeEvent = new Event('change', { bubbles: true });
+                element.dispatchEvent(changeEvent);
+                results.success.push(selector);
+              } else {
+                // Try with a different approach for IDs with special characters
+                if (selector.startsWith('#')) {
+                  const id = selector.substring(1);
+                  try {
+                    element = document.querySelector(\`[id="\${id}"]\`);
+                    if (element) {
+                      element.value = value;
+                      const inputEvent = new Event('input', { bubbles: true });
+                      element.dispatchEvent(inputEvent);
+                      const changeEvent = new Event('change', { bubbles: true });
+                      element.dispatchEvent(changeEvent);
+                      results.success.push(selector);
+                      return;
+                    }
+                  } catch (e) {
+                    console.error("Error with alternate selector method:", e);
+                  }
+                }
+                
+                results.failed.push(selector);
+                console.warn("Element not found for selector:", selector);
               }
             });
-            return true;
+            
+            console.log("Autofill results:", results);
+            return results;
           })()
         `;
 
@@ -546,23 +699,50 @@ export const applyAutofill = async (
           const result = await browser.scripting.executeScript({
             target: { tabId: activeTab.id },
             func: (data) => {
+              const results = {
+                success: [],
+                failed: [],
+              };
+
               Object.entries(data).forEach(([selector, value]) => {
-                const element = document.querySelector(selector);
+                let element;
+
+                // Special handling for selectors with brackets
+                if (selector.includes("[") && selector.includes("]")) {
+                  // Handle custom questions with bracket notation in ID
+                  if (selector.startsWith("#customQuestions")) {
+                    const customId = selector.replace("#", "");
+                    element = document.getElementById(customId);
+                  }
+                  // Handle other attribute selectors
+                  else {
+                    element = document.querySelector(selector);
+                  }
+                } else {
+                  element = document.querySelector(selector);
+                }
+
                 if (element) {
                   element.value = value;
-                  // Trigger change event
-                  const event = new Event("input", { bubbles: true });
-                  element.dispatchEvent(event);
+                  const inputEvent = new Event("input", { bubbles: true });
+                  element.dispatchEvent(inputEvent);
+                  const changeEvent = new Event("change", { bubbles: true });
+                  element.dispatchEvent(changeEvent);
+                  results.success.push(selector);
+                } else {
+                  results.failed.push(selector);
+                  console.warn("Element not found for selector:", selector);
                 }
               });
-              return true;
+
+              return results;
             },
             args: [autofillData],
           });
 
           if (!isMounted.current) return false;
 
-          console.log("Autofill applied successfully");
+          console.log("Autofill applied successfully", result);
           return true;
         } else {
           // Fallback for older Firefox versions
@@ -572,7 +752,7 @@ export const applyAutofill = async (
 
           if (!isMounted.current) return false;
 
-          console.log("Autofill applied successfully");
+          console.log("Autofill applied successfully", result);
           return true;
         }
       } catch (error) {
