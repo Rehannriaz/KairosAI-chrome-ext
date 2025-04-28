@@ -49,6 +49,18 @@ interface Resume {
   isPrimary?: boolean;
 }
 
+// User profile interface
+interface UserProfile {
+  name: string;
+  email: string;
+  phone: string;
+  location: string;
+  linkedin?: string;
+  github?: string;
+  portfolio?: string;
+  // Add any other user profile properties you need
+}
+
 // Main Popup component with authentication
 const Popup: React.FC = (): JSX.Element => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -78,6 +90,7 @@ const HomeView: React.FC = (): JSX.Element => {
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   // Track the selected resume ID
   const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
@@ -136,11 +149,26 @@ const HomeView: React.FC = (): JSX.Element => {
 
           setResumes(processedResumes);
 
+          // Set user profile from primary resume or first resume
           const primaryResume = processedResumes.find((r) => r.isPrimary);
-          if (primaryResume) {
-            setSelectedResumeId(primaryResume.id);
-          } else if (processedResumes.length > 0) {
-            setSelectedResumeId(processedResumes[0].id);
+          const profileResume =
+            primaryResume ||
+            (processedResumes.length > 0 ? processedResumes[0] : null);
+
+          if (profileResume) {
+            setSelectedResumeId(profileResume.id);
+
+            // Extract user profile data from resume
+            const profileData: UserProfile = {
+              name: profileResume.name,
+              email: profileResume.email,
+              phone: profileResume.phone,
+              location: profileResume.location,
+              linkedin: profileResume.link || undefined,
+              // You can add more fields as needed
+            };
+
+            setUserProfile(profileData);
           }
         });
       } catch (err) {
@@ -155,6 +183,7 @@ const HomeView: React.FC = (): JSX.Element => {
 
     fetchResumes();
   }, []);
+
   const onAutofillClick = async () => {
     try {
       setIsAutofilling(true);
@@ -293,6 +322,16 @@ const HomeView: React.FC = (): JSX.Element => {
     });
   };
 
+  // Get initials from name for avatar
+  const getInitials = (name: string): string => {
+    return name
+      .split(" ")
+      .map((part) => part.charAt(0))
+      .join("")
+      .toUpperCase()
+      .substring(0, 2);
+  };
+
   return (
     <div className="simplify-app">
       <div className="app-header">
@@ -405,9 +444,9 @@ const HomeView: React.FC = (): JSX.Element => {
                             {resume.name}
                           </div>
                           <div className="resume-option-details">
-                            <span className="resume-updated">
+                            {/* <span className="resume-updated">
                               Updated: {formatDate(resume.uploaddate)}
-                            </span>
+                            </span> */}
                             {resume.isPrimary && (
                               <span className="primary-badge">Primary</span>
                             )}
@@ -420,14 +459,14 @@ const HomeView: React.FC = (): JSX.Element => {
                   </div>
                 )}
 
-                <div className="tailor-resume-section">
+                {/* <div className="tailor-resume-section">
                   <button
                     className="tailor-button"
                     onClick={handleTailorResume}
                     disabled={!selectedResumeId}>
                     <span className="tailor-icon">✏️</span> Tailor Resume
                   </button>
-                </div>
+                </div> */}
               </>
             )}
           </div>
@@ -436,18 +475,193 @@ const HomeView: React.FC = (): JSX.Element => {
 
       {activeTab === "profile" && (
         <div className="profile-tab">
-          <h3>Profile Settings</h3>
-          <p>User profile information and settings would appear here.</p>
-          <div className="profile-content">
-            <div className="profile-section">
-              <h4>Personal Information</h4>
-              <p>Name, email, and contact details would appear here.</p>
+          {isLoading ? (
+            <div className="loading-state">Loading your profile...</div>
+          ) : error ? (
+            <div className="error-state">
+              <p>Error: {error}</p>
+              <button
+                className="retry-button"
+                onClick={() => window.location.reload()}>
+                Retry
+              </button>
             </div>
-            <div className="profile-section">
-              <h4>Preferences</h4>
-              <p>User preferences and settings would appear here.</p>
-            </div>
-          </div>
+          ) : userProfile ? (
+            <>
+              <div className="profile-header">
+                <h3 className="profile-name">{userProfile.name}</h3>
+              </div>
+
+              <div className="profile-info">
+                <div className="profile-avatar">
+                  <span className="avatar-initials">
+                    {getInitials(userProfile.name)}
+                  </span>
+                </div>
+                <div className="profile-details">
+                  <p className="detail-item">{userProfile.location}</p>
+                  <p className="detail-item">{userProfile.email}</p>
+                  <p className="detail-item">{userProfile.phone}</p>
+                </div>
+              </div>
+
+              {selectedResume && (
+                <>
+                  {selectedResume.education &&
+                    selectedResume.education.length > 0 && (
+                      <div className="section education-section">
+                        <h4 className="section-title">Education</h4>
+                        {selectedResume.education.map((edu, index) => (
+                          <div className="education-item" key={index}>
+                            <div className="education-details">
+                              <h5 className="institution">{edu.institution}</h5>
+                              <p className="degree">{edu.degree}</p>
+                              <p className="period">
+                                {edu.start_date} - {edu.end_date}
+                              </p>
+                              {edu.gpa && <p className="gpa">GPA: {edu.gpa}</p>}
+                              {edu.honors && edu.honors.length > 0 && (
+                                <p className="honors">
+                                  Honors: {edu.honors.join(", ")}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                  {selectedResume.employment_history &&
+                    selectedResume.employment_history.length > 0 && (
+                      <div className="section experience-section">
+                        <h4 className="section-title">Experience</h4>
+                        {selectedResume.employment_history.map((job, index) => (
+                          <div className="experience-item" key={index}>
+                            <div className="experience-details">
+                              <h5 className="job-title">{job.job_title}</h5>
+                              <p className="company">
+                                {job.company} • {selectedResume.location}
+                              </p>
+                              <p className="period">
+                                {job.start_date} - {job.end_date}
+                              </p>
+                              <p className="description">{job.description}</p>
+                              {job.achievements &&
+                                job.achievements.length > 0 && (
+                                  <div className="achievements">
+                                    <p className="achievements-title">
+                                      Achievements:
+                                    </p>
+                                    <ul>
+                                      {job.achievements.map(
+                                        (achievement, idx) => (
+                                          <li key={idx}>{achievement}</li>
+                                        )
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                  {selectedResume.file_url && (
+                    <div className="section uploads-section">
+                      <h4 className="section-title">Uploads</h4>
+                      <div className="upload-item">
+                        <div className="upload-details">
+                          <h5 className="upload-title">Resume</h5>
+                          <p className="upload-info">
+                            Uploaded: {formatDate(selectedResume.uploaddate)}
+                          </p>
+                          <a
+                            href={selectedResume.file_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="preview-link">
+                            Preview
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {userProfile.linkedin ||
+                    userProfile.github ||
+                    (selectedResume.link && (
+                      <div className="section links-section">
+                        <h4 className="section-title">Links</h4>
+
+                        {userProfile.linkedin && (
+                          <div className="link-item">
+                            <div className="link-details">
+                              <h5 className="link-title">LinkedIn</h5>
+                              <a
+                                href={userProfile.linkedin}
+                                className="link-url"
+                                target="_blank"
+                                rel="noopener noreferrer">
+                                {userProfile.linkedin}
+                              </a>
+                            </div>
+                          </div>
+                        )}
+
+                        {userProfile.github && (
+                          <div className="link-item">
+                            <div className="link-details">
+                              <h5 className="link-title">Github</h5>
+                              <a
+                                href={userProfile.github}
+                                className="link-url"
+                                target="_blank"
+                                rel="noopener noreferrer">
+                                {userProfile.github}
+                              </a>
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedResume.link &&
+                          !userProfile.linkedin &&
+                          !userProfile.github && (
+                            <div className="link-item">
+                              <div className="link-details">
+                                <h5 className="link-title">Profile Link</h5>
+                                <a
+                                  href={selectedResume.link}
+                                  className="link-url"
+                                  target="_blank"
+                                  rel="noopener noreferrer">
+                                  {selectedResume.link}
+                                </a>
+                              </div>
+                            </div>
+                          )}
+                      </div>
+                    ))}
+
+                  {selectedResume.skills &&
+                    selectedResume.skills.length > 0 && (
+                      <div className="section skills-section">
+                        <h4 className="section-title">Skills</h4>
+                        <div className="skills-container">
+                          {selectedResume.skills.map((skill, index) => (
+                            <span className="skill-tag" key={index}>
+                              {skill}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                </>
+              )}
+            </>
+          ) : (
+            <div className="no-profile">No profile information available</div>
+          )}
         </div>
       )}
     </div>
