@@ -155,7 +155,6 @@ const HomeView: React.FC = (): JSX.Element => {
 
     fetchResumes();
   }, []);
-
   const onAutofillClick = async () => {
     try {
       setIsAutofilling(true);
@@ -173,6 +172,7 @@ const HomeView: React.FC = (): JSX.Element => {
         if (!selectedResume) {
           throw new Error("No resume selected for autofill");
         }
+
         // Process the HTML content to extract form fields
         const formFields = processAutofillContent(htmlContent);
 
@@ -188,6 +188,7 @@ const HomeView: React.FC = (): JSX.Element => {
           setIsAutofilling(false);
           return;
         }
+        console.log("resume", selectedResume);
 
         // Prepare the API request to GPT-3.5 Turbo
         const response = await fetch(
@@ -196,7 +197,7 @@ const HomeView: React.FC = (): JSX.Element => {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${CONFIG.OPENAI_API_KEY}`, // Use the config here
+              Authorization: `Bearer ${CONFIG.OPENAI_API_KEY}`,
             },
             body: JSON.stringify({
               model: "gpt-3.5-turbo",
@@ -209,14 +210,14 @@ const HomeView: React.FC = (): JSX.Element => {
                 {
                   role: "user",
                   content: `Map this resume data to the form fields. 
-                Resume: ${JSON.stringify(selectedResume)}
-                Form fields: ${JSON.stringify(formFields)}
-                
-                Return a JSON object where keys are the form field selectors and values are the appropriate data from the resume.
-                For example: {"input[name='firstName']": "John", "input[name='email']": "john@example.com"}
-                
-                Be smart about mapping fields - look for patterns in field names and labels to determine what information should go where.
-                If you're unsure about a field, it's better to leave it blank than guess incorrectly.`,
+              Resume: ${JSON.stringify(selectedResume)}
+              Form fields: ${JSON.stringify(formFields)}
+              
+              Return a JSON object where keys are the form field selectors and values are the appropriate data from the resume.
+              For example: {"input[name='firstName']": "John", "input[name='email']": "john@example.com"}
+              
+              Be smart about mapping fields - look for patterns in field names and labels to determine what information should go where.
+              If you're unsure about a field, it's better to leave it blank than guess incorrectly.`,
                 },
               ],
               temperature: 0.3,
@@ -234,8 +235,8 @@ const HomeView: React.FC = (): JSX.Element => {
 
         console.log("AI-generated autofill data:", autofillData);
 
-        // Apply the autofill data
-        await applyAutofill(isMounted, autofillData);
+        // Apply the autofill data, passing the selected resume
+        await applyAutofill(isMounted, autofillData, selectedResume);
       }
     } catch (error) {
       console.error("Autofill error:", error);

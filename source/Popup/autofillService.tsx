@@ -407,213 +407,592 @@ export const processAutofillContent = (
 
   return formFields;
 };
+const uploadToFileInputs = async (
+  activeTabId,
+  fileData,
+  fileName,
+  fileType
+) => {
+  // Create a script that will:
+  // 1. Find all file inputs
+  // 2. Try to upload to each one
+  const uploadScript = `
+    (function() {
+      const fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+      const results = [];
+      
+      if (fileInputs.length === 0) {
+        return { success: false, message: 'No file inputs found' };
+      }
+      
+      for (let i = 0; i < fileInputs.length; i++) {
+        const input = fileInputs[i];
+        try {
+          // Create a File object
+          const uint8Array = new Uint8Array(${JSON.stringify(fileData)});
+          const blob = new Blob([uint8Array], { type: '${fileType}' });
+          const file = new File([blob], '${fileName}', { type: '${fileType}' });
+          
+          // Use DataTransfer to set the file
+          const dataTransfer = new DataTransfer();
+          dataTransfer.items.add(file);
+          input.files = dataTransfer.files;
+          
+          // Trigger change event
+          const event = new Event('change', { bubbles: true });
+          input.dispatchEvent(event);
+          
+          results.push({
+            index: i,
+            success: true,
+            info: {
+              id: input.id || '[no id]',
+              name: input.name || '[no name]'
+            }
+          });
+        } catch (err) {
+          results.push({
+            index: i,
+            success: false,
+            error: err.message,
+            info: {
+              id: input.id || '[no id]',
+              name: input.name || '[no name]'
+            }
+          });
+        }
+      }
+      
+      return { 
+        success: results.some(r => r.success), 
+        results: results 
+      };
+    })()
+  `;
 
+  return new Promise((resolve, reject) => {
+    try {
+      if (
+        chrome.scripting &&
+        typeof chrome.scripting.executeScript === "function"
+      ) {
+        chrome.scripting.executeScript(
+          {
+            target: { tabId: activeTabId },
+            func: (fileDataArr, fileName, fileType) => {
+              // Same function body as above
+              const fileInputs = Array.from(
+                document.querySelectorAll('input[type="file"]')
+              );
+              const results = [];
+
+              if (fileInputs.length === 0) {
+                return { success: false, message: "No file inputs found" };
+              }
+
+              for (let i = 0; i < fileInputs.length; i++) {
+                const input = fileInputs[i];
+                try {
+                  // Create a File object
+                  const uint8Array = new Uint8Array(fileDataArr);
+                  const blob = new Blob([uint8Array], { type: fileType });
+                  const file = new File([blob], fileName, { type: fileType });
+
+                  // Use DataTransfer to set the file
+                  const dataTransfer = new DataTransfer();
+                  dataTransfer.items.add(file);
+                  input.files = dataTransfer.files;
+
+                  // Trigger change event
+                  const event = new Event("change", { bubbles: true });
+                  input.dispatchEvent(event);
+
+                  results.push({
+                    index: i,
+                    success: true,
+                    info: {
+                      id: input.id || "[no id]",
+                      name: input.name || "[no name]",
+                    },
+                  });
+                } catch (err) {
+                  results.push({
+                    index: i,
+                    success: false,
+                    error: err.message,
+                    info: {
+                      id: input.id || "[no id]",
+                      name: input.name || "[no name]",
+                    },
+                  });
+                }
+              }
+
+              return {
+                success: results.some((r) => r.success),
+                results: results,
+              };
+            },
+            args: [fileData, fileName, fileType],
+          },
+          (results) => {
+            if (chrome.runtime.lastError) {
+              resolve({
+                success: false,
+                error: chrome.runtime.lastError.message,
+              });
+            } else {
+              resolve(results[0].result);
+            }
+          }
+        );
+      } else if (
+        chrome.tabs &&
+        typeof chrome.tabs.executeScript === "function"
+      ) {
+        chrome.tabs.executeScript(
+          activeTabId,
+          { code: uploadScript },
+          (results) => {
+            if (chrome.runtime.lastError) {
+              resolve({
+                success: false,
+                error: chrome.runtime.lastError.message,
+              });
+            } else {
+              resolve(results[0]);
+            }
+          }
+        );
+      } else {
+        resolve({ success: false, error: "No execution method available" });
+      }
+    } catch (err) {
+      resolve({ success: false, error: err.message });
+    }
+  });
+};
 export const applyAutofill = async (
   isMounted: React.MutableRefObject<boolean>,
-  autofillData: Record<string, string>
+  autofillData: Record<string, string>,
+  selectedResume?: Resume // Add the selected resume parameter
 ): Promise<boolean> => {
   try {
     // For Chrome
     if (typeof chrome !== "undefined" && chrome.tabs) {
       return new Promise((resolve, reject) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          if (!isMounted.current) {
-            resolve(false);
-            return;
-          }
+        chrome.tabs.query(
+          { active: true, currentWindow: true },
+          async (tabs) => {
+            if (!isMounted.current) {
+              resolve(false);
+              return;
+            }
 
-          const activeTab = tabs[0];
-          if (!activeTab || !activeTab.id) {
-            console.error("No active tab found");
-            reject(new Error("No active tab found"));
-            return;
-          }
+            const activeTab = tabs[0];
+            if (!activeTab || !activeTab.id) {
+              console.error("No active tab found");
+              reject(new Error("No active tab found"));
+              return;
+            }
 
-          // Updated autofill function to handle special selectors
-          const autofillFunctionStr = `
-            (function(data) {
-              Object.entries(data).forEach(([selector, value]) => {
-                let element;
-                
-                // Special handling for selectors with brackets
-                if (selector.includes('[') && selector.includes(']')) {
-                  // Handle custom questions with bracket notation in ID
-                  if (selector.startsWith('#customQuestions')) {
-                    const customId = selector.replace('#', '');
-                    element = document.getElementById(customId);
-                  } 
-                  // Handle other attribute selectors
-                  else {
-                    element = document.querySelector(selector);
+            // First, identify file inputs that need to be handled separately
+            // First, identify file inputs that need to be handled separately
+            // In your applyAutofill function, replace the file handling section:
+            if (selectedResume?.file_url) {
+              try {
+                console.log(
+                  "Attempting to handle file upload for resume:",
+                  selectedResume.name
+                );
+
+                // Enhanced file detection - try both scripting and fallback methods
+                let fileInputs = [];
+
+                if (
+                  chrome.scripting &&
+                  typeof chrome.scripting.executeScript === "function"
+                ) {
+                  try {
+                    const fileInputDetectionResult =
+                      await chrome.scripting.executeScript({
+                        target: { tabId: activeTab.id },
+                        func: () => {
+                          // Comprehensive file input detection
+                          let inputs = Array.from(
+                            document.querySelectorAll('input[type="file"]')
+                          );
+
+                          // Also check for file inputs without proper type attribute
+                          if (inputs.length === 0) {
+                            inputs = Array.from(
+                              document.getElementsByTagName("input")
+                            ).filter(
+                              (input) =>
+                                input.accept &&
+                                (input.accept.includes("pdf") ||
+                                  input.accept.includes("doc") ||
+                                  input.accept.includes("application"))
+                            );
+                          }
+
+                          return inputs.map((input) => ({
+                            selector: input.id
+                              ? `#${input.id}`
+                              : input.name
+                                ? `input[name="${input.name}"]`
+                                : null,
+                            id: input.id || "",
+                            name: input.name || "",
+                            accept: input.getAttribute("accept") || "",
+                            index: Array.from(
+                              document.querySelectorAll("input")
+                            ).indexOf(input),
+                          }));
+                        },
+                      });
+
+                    fileInputs = fileInputDetectionResult[0].result;
+                    console.log(
+                      "Detected file inputs via scripting API:",
+                      fileInputs
+                    );
+                  } catch (error) {
+                    console.error(
+                      "Error using scripting API for file detection:",
+                      error
+                    );
+                  }
+                }
+
+                // If no inputs found or error occurred, try the fallback
+                if (!fileInputs || fileInputs.length === 0) {
+                  console.log("Using fallback method for file detection");
+
+                  try {
+                    const fileDetectionCode = `
+          (function() {
+            const fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+            console.log("Raw file inputs found:", fileInputs.length);
+            
+            // Map to desired format
+            return fileInputs.map((input, index) => ({
+              selector: input.id ? '#' + input.id : 
+                      input.name ? 'input[name="' + input.name + '"]' : 
+                      'input[type="file"]:nth-of-type(' + (index+1) + ')',
+              id: input.id || '',
+              name: input.name || '',
+              accept: input.getAttribute("accept") || "",
+              index: index
+            }));
+          })()
+        `;
+
+                    const results = await new Promise((resolve) => {
+                      chrome.tabs.executeScript(
+                        activeTab.id,
+                        { code: fileDetectionCode },
+                        (results) => {
+                          if (chrome.runtime.lastError) {
+                            console.error(
+                              "Error in fallback detection:",
+                              chrome.runtime.lastError
+                            );
+                            resolve([]);
+                          } else {
+                            resolve(results[0] || []);
+                          }
+                        }
+                      );
+                    });
+
+                    fileInputs = results;
+                    console.log("Detected file inputs (fallback):", fileInputs);
+                  } catch (error) {
+                    console.error(
+                      "Error in fallback file input detection:",
+                      error
+                    );
+                  }
+                }
+
+                // If file inputs found, fetch and upload the resume
+                if (fileInputs && fileInputs.length > 0) {
+                  try {
+                    // Fetch the resume file
+                    const response = await fetch(selectedResume.file_url);
+                    if (!response.ok)
+                      throw new Error("Failed to fetch resume file");
+
+                    const blob = await response.blob();
+                    const arrayBuffer = await blob.arrayBuffer();
+                    const buffer = Array.from(new Uint8Array(arrayBuffer));
+
+                    // Get file extension and MIME type
+                    const fileExt =
+                      selectedResume.file_url.split(".").pop()?.toLowerCase() ||
+                      "pdf";
+                    const mimeType =
+                      fileExt === "pdf"
+                        ? "application/pdf"
+                        : fileExt === "docx"
+                          ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                          : fileExt === "doc"
+                            ? "application/msword"
+                            : "application/octet-stream";
+
+                    const fileName = `${selectedResume.name}.${fileExt}`;
+
+                    // Try to upload to all file inputs
+                    const uploadResult = await uploadToFileInputs(
+                      activeTab.id,
+                      buffer,
+                      fileName,
+                      mimeType
+                    );
+
+                    console.log("File upload result:", uploadResult);
+                  } catch (error) {
+                    console.error("Error processing resume file:", error);
                   }
                 } else {
-                  element = document.querySelector(selector);
+                  console.warn("No file inputs found for resume upload");
                 }
-                
-                if (element) {
-                  // Set the value
-                  element.value = value;
-                  
-                  // Trigger events for proper form handling
-                  const inputEvent = new Event('input', { bubbles: true });
-                  element.dispatchEvent(inputEvent);
-                  
-                  const changeEvent = new Event('change', { bubbles: true });
-                  element.dispatchEvent(changeEvent);
-                  
-                  // If it's a select element, make sure the option is selected
-                  if (element.tagName === 'SELECT') {
-                    for (let i = 0; i < element.options.length; i++) {
-                      if (element.options[i].value === value) {
-                        element.options[i].selected = true;
-                        break;
-                      }
-                    }
-                  }
-                } else {
-                  console.warn("Element not found for selector:", selector);
-                }
-              });
-              return true;
-            })(${JSON.stringify(autofillData)})
-          `;
+              } catch (error) {
+                console.error("Error in file upload process:", error);
+              }
+            }
 
-          // Check if scripting API is available in Chrome
-          if (chrome.scripting) {
-            chrome.scripting.executeScript(
-              {
-                target: { tabId: activeTab.id },
-                func: function (data) {
-                  const results = {
-                    success: [],
-                    failed: [],
-                  };
+            // Now handle the regular form fields (original logic preserved)
+            // Check if scripting API is available in Chrome
+            if (chrome.scripting) {
+              chrome.scripting.executeScript(
+                {
+                  target: { tabId: activeTab.id },
+                  func: function (data) {
+                    const results = {
+                      success: [],
+                      failed: [],
+                    };
 
-                  Object.entries(data).forEach(([selector, value]) => {
-                    let element;
+                    Object.entries(data).forEach(([selector, value]) => {
+                      let element;
 
-                    // Special handling for selectors with brackets
-                    if (selector.includes("[") && selector.includes("]")) {
-                      // Handle custom questions with bracket notation in ID
-                      if (selector.startsWith("#customQuestions")) {
-                        const customId = selector.replace("#", "");
-                        element = document.getElementById(customId);
-                      }
-                      // Handle other attribute selectors
-                      else {
+                      // Special handling for selectors with brackets
+                      if (selector.includes("[") && selector.includes("]")) {
+                        // Handle custom questions with bracket notation in ID
+                        if (selector.startsWith("#customQuestions")) {
+                          const customId = selector.replace("#", "");
+                          element = document.getElementById(customId);
+                        }
+                        // Handle other attribute selectors
+                        else {
+                          element = document.querySelector(selector);
+                        }
+                      } else {
                         element = document.querySelector(selector);
                       }
-                    } else {
+
+                      if (element) {
+                        // Skip file inputs as we handle them separately
+                        if (element.type === "file") return;
+
+                        // Set the value
+                        element.value = value;
+
+                        // Trigger events for proper form handling
+                        const inputEvent = new Event("input", {
+                          bubbles: true,
+                        });
+                        element.dispatchEvent(inputEvent);
+
+                        const changeEvent = new Event("change", {
+                          bubbles: true,
+                        });
+                        element.dispatchEvent(changeEvent);
+
+                        // If it's a select element, make sure the option is selected
+                        if (element.tagName === "SELECT") {
+                          for (let i = 0; i < element.options.length; i++) {
+                            if (element.options[i].value === value) {
+                              element.options[i].selected = true;
+                              break;
+                            }
+                          }
+                        }
+
+                        results.success.push(selector);
+                      } else {
+                        // Try with a different approach for IDs with special characters
+                        if (selector.startsWith("#")) {
+                          const id = selector.substring(1);
+                          // Try to escape special characters in ID
+                          try {
+                            element = document.querySelector(`[id="${id}"]`);
+                            if (element) {
+                              if (element.type === "file") return;
+
+                              element.value = value;
+                              const inputEvent = new Event("input", {
+                                bubbles: true,
+                              });
+                              element.dispatchEvent(inputEvent);
+                              const changeEvent = new Event("change", {
+                                bubbles: true,
+                              });
+                              element.dispatchEvent(changeEvent);
+                              results.success.push(selector);
+                              return;
+                            }
+                          } catch (e) {
+                            console.error(
+                              "Error with alternate selector method:",
+                              e
+                            );
+                          }
+                        }
+
+                        results.failed.push(selector);
+                        console.warn(
+                          "Element not found for selector:",
+                          selector
+                        );
+                      }
+                    });
+
+                    console.log("Autofill results:", results);
+                    return results;
+                  },
+                  args: [autofillData],
+                },
+                (results) => {
+                  if (!isMounted.current) {
+                    resolve(false);
+                    return;
+                  }
+
+                  if (chrome.runtime.lastError) {
+                    console.error(
+                      "Error applying autofill:",
+                      chrome.runtime.lastError
+                    );
+                    reject(chrome.runtime.lastError);
+                    return;
+                  }
+
+                  console.log("Autofill applied successfully", results);
+                  resolve(true);
+                }
+              );
+            } else {
+              // Fallback for older Chrome versions using executeScript on tabs
+              const autofillFunctionStr = `
+              (function(data) {
+                const results = {
+                  success: [],
+                  failed: []
+                };
+                
+                Object.entries(data).forEach(([selector, value]) => {
+                  let element;
+                  
+                  // Special handling for selectors with brackets
+                  if (selector.includes('[') && selector.includes(']')) {
+                    // Handle custom questions with bracket notation in ID
+                    if (selector.startsWith('#customQuestions')) {
+                      const customId = selector.replace('#', '');
+                      element = document.getElementById(customId);
+                    } 
+                    // Handle other attribute selectors
+                    else {
                       element = document.querySelector(selector);
                     }
-
-                    if (element) {
-                      // Set the value
-                      element.value = value;
-
-                      // Trigger events for proper form handling
-                      const inputEvent = new Event("input", { bubbles: true });
-                      element.dispatchEvent(inputEvent);
-
-                      const changeEvent = new Event("change", {
-                        bubbles: true,
-                      });
-                      element.dispatchEvent(changeEvent);
-
-                      // If it's a select element, make sure the option is selected
-                      if (element.tagName === "SELECT") {
-                        for (let i = 0; i < element.options.length; i++) {
-                          if (element.options[i].value === value) {
-                            element.options[i].selected = true;
-                            break;
-                          }
+                  } else {
+                    element = document.querySelector(selector);
+                  }
+                  
+                  if (element) {
+                    // Skip file inputs
+                    if (element.type === 'file') return;
+                    
+                    // Set the value
+                    element.value = value;
+                    
+                    // Trigger events for proper form handling
+                    const inputEvent = new Event('input', { bubbles: true });
+                    element.dispatchEvent(inputEvent);
+                    
+                    const changeEvent = new Event('change', { bubbles: true });
+                    element.dispatchEvent(changeEvent);
+                    
+                    // If it's a select element, make sure the option is selected
+                    if (element.tagName === 'SELECT') {
+                      for (let i = 0; i < element.options.length; i++) {
+                        if (element.options[i].value === value) {
+                          element.options[i].selected = true;
+                          break;
                         }
                       }
-
-                      results.success.push(selector);
-                    } else {
-                      // Try with a different approach for IDs with special characters
-                      if (selector.startsWith("#")) {
-                        const id = selector.substring(1);
-                        // Try to escape special characters in ID
-                        try {
-                          element = document.querySelector(`[id="${id}"]`);
-                          if (element) {
-                            element.value = value;
-                            const inputEvent = new Event("input", {
-                              bubbles: true,
-                            });
-                            element.dispatchEvent(inputEvent);
-                            const changeEvent = new Event("change", {
-                              bubbles: true,
-                            });
-                            element.dispatchEvent(changeEvent);
-                            results.success.push(selector);
-                            return;
-                          }
-                        } catch (e) {
-                          console.error(
-                            "Error with alternate selector method:",
-                            e
-                          );
-                        }
-                      }
-
-                      results.failed.push(selector);
-                      console.warn("Element not found for selector:", selector);
                     }
-                  });
+                    
+                    results.success.push(selector);
+                  } else {
+                    // Try with a different approach for IDs with special characters
+                    if (selector.startsWith('#')) {
+                      const id = selector.substring(1);
+                      try {
+                        element = document.querySelector(\`[id="\${id}"]\`);
+                        if (element) {
+                          if (element.type === 'file') return;
+                          
+                          element.value = value;
+                          const inputEvent = new Event('input', { bubbles: true });
+                          element.dispatchEvent(inputEvent);
+                          const changeEvent = new Event('change', { bubbles: true });
+                          element.dispatchEvent(changeEvent);
+                          results.success.push(selector);
+                          return;
+                        }
+                      } catch (e) {
+                        console.error("Error with alternate selector method:", e);
+                      }
+                    }
+                    
+                    results.failed.push(selector);
+                    console.warn("Element not found for selector:", selector);
+                  }
+                });
+                
+                console.log("Autofill results:", results);
+                return results;
+              })(${JSON.stringify(autofillData)})
+            `;
 
-                  console.log("Autofill results:", results);
-                  return results;
-                },
-                args: [autofillData],
-              },
-              (results) => {
-                if (!isMounted.current) {
-                  resolve(false);
-                  return;
+              chrome.tabs.executeScript(
+                activeTab.id,
+                { code: autofillFunctionStr },
+                (results) => {
+                  if (!isMounted.current) {
+                    resolve(false);
+                    return;
+                  }
+
+                  if (chrome.runtime.lastError) {
+                    console.error(
+                      "Error applying autofill:",
+                      chrome.runtime.lastError
+                    );
+                    reject(chrome.runtime.lastError);
+                    return;
+                  }
+
+                  console.log("Autofill applied successfully");
+                  resolve(true);
                 }
-
-                if (chrome.runtime.lastError) {
-                  console.error(
-                    "Error applying autofill:",
-                    chrome.runtime.lastError
-                  );
-                  reject(chrome.runtime.lastError);
-                  return;
-                }
-
-                console.log("Autofill applied successfully", results);
-                resolve(true);
-              }
-            );
-          } else {
-            // Fallback for older Chrome versions using executeScript on tabs
-            chrome.tabs.executeScript(
-              activeTab.id,
-              { code: autofillFunctionStr },
-              (results) => {
-                if (!isMounted.current) {
-                  resolve(false);
-                  return;
-                }
-
-                if (chrome.runtime.lastError) {
-                  console.error(
-                    "Error applying autofill:",
-                    chrome.runtime.lastError
-                  );
-                  reject(chrome.runtime.lastError);
-                  return;
-                }
-
-                console.log("Autofill applied successfully");
-                resolve(true);
-              }
-            );
+              );
+            }
           }
-        });
+        );
       });
     }
     // For Firefox
@@ -631,7 +1010,92 @@ export const applyAutofill = async (
           return false;
         }
 
-        // Updated autofill function to handle special selectors
+        // Handle file inputs for Firefox (if selectedResume is provided)
+        if (selectedResume?.file_url && browser.scripting) {
+          try {
+            const fileInputResult = await browser.scripting.executeScript({
+              target: { tabId: activeTab.id },
+              func: () => {
+                return Array.from(
+                  document.querySelectorAll('input[type="file"]')
+                )
+                  .map((input) => ({
+                    selector: input.id
+                      ? `#${input.id}`
+                      : input.name
+                        ? `input[name="${input.name}"]`
+                        : null,
+                    id: input.id,
+                    name: input.name,
+                  }))
+                  .filter((input) => input.selector);
+              },
+            });
+
+            const fileInputs = fileInputResult[0].result;
+
+            if (fileInputs.length > 0) {
+              // Fetch resume file
+              const response = await fetch(selectedResume.file_url);
+              const blob = await response.blob();
+              const buffer = Array.from(
+                new Uint8Array(await blob.arrayBuffer())
+              );
+
+              const fileExt =
+                selectedResume.file_url.split(".").pop()?.toLowerCase() ||
+                "pdf";
+              const mimeType =
+                fileExt === "pdf"
+                  ? "application/pdf"
+                  : fileExt === "docx"
+                    ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    : fileExt === "doc"
+                      ? "application/msword"
+                      : "application/octet-stream";
+
+              // Upload to each file input
+              for (const fileInput of fileInputs) {
+                await browser.scripting.executeScript({
+                  target: { tabId: activeTab.id },
+                  func: (selector, fileData, fileName, fileType) => {
+                    const input = document.querySelector(selector);
+                    if (!input) return false;
+
+                    try {
+                      const uint8Array = new Uint8Array(fileData);
+                      const blob = new Blob([uint8Array], { type: fileType });
+                      const file = new File([blob], fileName, {
+                        type: fileType,
+                      });
+
+                      const dataTransfer = new DataTransfer();
+                      dataTransfer.items.add(file);
+                      input.files = dataTransfer.files;
+
+                      const event = new Event("change", { bubbles: true });
+                      input.dispatchEvent(event);
+                      return true;
+                    } catch (err) {
+                      console.error("Error setting file:", err);
+                      return false;
+                    }
+                  },
+                  args: [
+                    fileInput.selector,
+                    buffer,
+                    selectedResume.name + "." + fileExt,
+                    mimeType,
+                  ],
+                });
+              }
+            }
+          } catch (error) {
+            console.error("Error handling file inputs in Firefox:", error);
+          }
+        }
+
+        // Handle regular form fields (original Firefox logic preserved)
         const autofillFunctionStr = `
           (function() {
             const data = ${JSON.stringify(autofillData)};
@@ -659,6 +1123,9 @@ export const applyAutofill = async (
               }
               
               if (element) {
+                // Skip file inputs
+                if (element.type === 'file') return;
+                
                 element.value = value;
                 const inputEvent = new Event('input', { bubbles: true });
                 element.dispatchEvent(inputEvent);
@@ -672,6 +1139,8 @@ export const applyAutofill = async (
                   try {
                     element = document.querySelector(\`[id="\${id}"]\`);
                     if (element) {
+                      if (element.type === 'file') return;
+                      
                       element.value = value;
                       const inputEvent = new Event('input', { bubbles: true });
                       element.dispatchEvent(inputEvent);
@@ -723,6 +1192,9 @@ export const applyAutofill = async (
                 }
 
                 if (element) {
+                  // Skip file inputs
+                  if (element.type === "file") return;
+
                   element.value = value;
                   const inputEvent = new Event("input", { bubbles: true });
                   element.dispatchEvent(inputEvent);
